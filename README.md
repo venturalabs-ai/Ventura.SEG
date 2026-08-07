@@ -8,34 +8,21 @@ Ventura.SEG é uma infraestrutura de proteção que atua como **guardião perman
 
 ---
 
-## 🛡️ Visão
-
-Em sistemas multi-agentes, a maior superfície de ataque não é o modelo em si, mas o que entra e sai dele. Ventura.SEG implementa **defesa em profundidade** com:
-
-- Gateway de entrada (nunca confiar em conteúdo externo)
-- Motor de permissões (privilégio mínimo)
-- Sandbox de execução real
-- Proxy de credenciais (segredos nunca expostos ao modelo)
-- Gateway de saída / DLP
-- Auditoria imutável
-- Capacidade regenerativa (self-healing)
-
----
-
 ## ✅ Status de Implementação
 
 | Módulo | Status | Descrição |
 |--------|--------|-----------|
 | **Motor de Permissões** | ✅ Implementado | YAML + hot-reload + logs |
 | **Sistema de Auditoria** | ✅ Implementado | Logs estruturados JSONL imutáveis |
+| **Gateway de Saída (DLP)** | ✅ Implementado | DLP real com regras YAML |
+| **Proxy de Credenciais** | ✅ Implementado | Segredos nunca expostos ao modelo |
+| **Loop Regenerativo** | ✅ Implementado | Self-healing (suggest / ask / auto) |
 | Gateway de Entrada | 🔳 Scaffold | Sanitização de conteúdo externo |
-| Gateway de Saída (DLP) | 🔳 Scaffold | Validação de saída e exfiltração |
-| Proxy de Credenciais | 🔳 Scaffold | Segredos fora do perímetro |
 | Sandbox | 🔳 Scaffold | Isolamento real de execução |
 
 ---
 
-## 🚀 Quickstart (Motor de Permissões)
+## 🚀 Quickstart
 
 ```bash
 pip install -r requirements.txt
@@ -43,66 +30,70 @@ pip install -r requirements.txt
 
 ```python
 from permissions import PermissionEngine, Action
+from gateway_out import DLPGateway
+from credential_proxy import CredentialProxy
+from core import RegenerativeLoop, HealingMode
 from audit import AuditLogger
 
-# Inicializa auditoria + motor
 audit = AuditLogger(log_dir="logs/audit")
+
+# Motor de permissões
 engine = PermissionEngine.from_policy_dir("policies/", audit_logger=audit)
 
-# Avalia comandos
-decision = engine.evaluate_command("rm -rf /")
-print(decision.action)        # Action.BLOCK
-print(decision.reason)        # rm -rf e variantes destrutivas
+# DLP (Gateway de Saída)
+dlp = DLPGateway.from_policy_file("policies/dlp_rules.yaml", audit_logger=audit)
 
-# Hot-reload dinâmico (sem reiniciar)
-engine.reload()
+# Proxy de credenciais (segredos fora do agente)
+proxy = CredentialProxy(audit_logger=audit)
+proxy.register("github_token", "ghp_xxx", allowed_domains=["api.github.com"])
+
+# Loop regenerativo
+loop = RegenerativeLoop(
+    audit_logger=audit,
+    permission_engine=engine,
+    dlp_gateway=dlp,
+    mode=HealingMode.AUTO,
+)
+
+# Exemplo de fluxo
+decision = engine.evaluate_command("rm -rf /")
+loop.observe(agent_id="agent-1", decision=decision.action.value, rule_id=decision.rule_id)
+
+dlp_decision = dlp.scan("AKIAIOSFODNN7EXAMPLE")
+if dlp_decision.blocked:
+    print("DLP bloqueou:", dlp_decision.reason)
+
+# Ciclo de self-healing
+actions = loop.tick()
 ```
 
 ---
 
-## 📁 Estrutura do Repositório
+## 📁 Estrutura
 
 ```
 Ventura.SEG/
-├── README.md
-├── LICENSE                 # Apache License 2.0
-├── SECURITY.md
-├── THREAT_MODEL.md
-├── requirements.txt
-├── docs/
-│   └── architecture.md
 ├── src/
-│   ├── permissions/       # ✅ Motor completo
-│   ├── audit/             # ✅ Logger imutável
-│   ├── gateway_in/        # Scaffold
-│   ├── gateway_out/       # Scaffold
-│   ├── credential_proxy/  # Scaffold
-│   └── sandbox/           # Scaffold
+│   ├── permissions/        # ✅ Motor YAML + hot-reload
+│   ├── audit/              # ✅ Logger imutável
+│   ├── gateway_out/        # ✅ DLP real
+│   ├── credential_proxy/   # ✅ Proxy de segredos
+│   ├── core/               # ✅ Loop regenerativo
+│   ├── gateway_in/         # Scaffold
+│   └── sandbox/            # Scaffold
 ├── policies/
 │   ├── allowlist_commands.yaml
 │   ├── allowlist_domains.yaml
 │   └── dlp_rules.yaml
+├── docs/architecture.md
 └── tests/
-    └── test_permission_engine.py
 ```
-
----
-
-## 🛡️ Modelo de Ameaça Coberto
-
-- Injeção de prompt indireta
-- Exfiltração de dados
-- Escalonamento de privilégio
-- Abuso de credenciais
-- Erros destrutivos do modelo
 
 ---
 
 ## 📝 Licença
 
-**Apache License 2.0** — licença open-source real e válida.
-
-> Certificações organizacionais (SOC 2, ISO 27001, LGPD etc.) não são atribuídas a repositórios de código.
+**Apache License 2.0**
 
 ---
 
