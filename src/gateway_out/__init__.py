@@ -7,4 +7,6 @@ antes de liberar. Bloqueia padrões de exfiltração.
 Princípio: Nenhuma ação sai sem checagem.
 """
 
-# Módulo em desenvolvimento — scaffold inicial
+from .dlp import DLPGateway, DLPDecision, DLPAction
+
+__all__ = ["DLPGateway", "DLPDecision", "DLPAction"]
