@@ -12,14 +12,20 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   policies:
     name: Policy integrity
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
@@ -32,30 +38,35 @@ jobs:
           test -f consul/upstreams.yaml
           echo "Policy files present"
 
-      - name: Fail-secure default check
+      - name: Validate fail-secure defaults
         run: |
-          pip install pyyaml -q
-          python3 - <<'PY'
+          python -m pip install --upgrade pip
+          pip install pyyaml
+          python - <<'PY'
           import yaml
           from pathlib import Path
-          data = yaml.safe_load(Path("policies/allowlist_commands.yaml").read_text())
+
+          data = yaml.safe_load(Path("policies/allowlist_commands.yaml").read_text(encoding="utf-8"))
           assert data.get("default_action") == "block", "commands default_action must be block"
           print("Fail-secure default_action=block OK")
           PY
 
-  pip-audit:
-    name: pip audit
+  dependency-audit:
+    name: Dependency audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
 
-      - name: Install and audit
+      - name: Audit Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
           pip install pip-audit
-          pip-audit -r requirements.txt || true
+          pip-audit -r requirements.txt
