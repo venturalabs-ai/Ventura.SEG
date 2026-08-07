@@ -1,0 +1,26 @@
+{
+  "Kind": "service-intentions",
+  "Name": "ventura-seg",
+  "Sources": [
+    {
+      "Name": "ai-agent",
+      "Action": "allow",
+      "Description": "Agentes de IA internos"
+    },
+    {
+      "Name": "ai-orchestrator",
+      "Action": "allow",
+      "Description": "Orquestrador multi-agente"
+    },
+    {
+      "Name": "admin-api",
+      "Action": "allow",
+      "Description": "API administrativa / painel de políticas"
+    },
+    {
+      "Name": "*",
+      "Action": "deny",
+      "Description": "Default deny"
+    }
+  ]
+}
