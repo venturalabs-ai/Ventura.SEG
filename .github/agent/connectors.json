@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "runtime_standard": "venturalabs-ai/ventura.build/AGENT_RUNTIME_STANDARD.md",
+  "max_active_connectors_per_skill": 6,
+  "defaults": {"mode":"read-only","human_approval_for":["external-write","delete","deploy","secrets","security-control-change","identity-policy-change"]},
+  "catalog": {
+    "github": {"trust":"official","purpose":"repository code security findings PRs Actions and provenance"},
+    "vault": {"trust":"native","purpose":"HashiCorp Vault secret policy auth and configuration operations with explicit approval"},
+    "consul": {"trust":"native","purpose":"HashiCorp Consul service identities intentions and mesh configuration when present"},
+    "opa": {"trust":"local","purpose":"policy-as-code evaluation and deterministic authorization tests"},
+    "trivy": {"trust":"native","purpose":"filesystem dependency configuration and container vulnerability scanning"},
+    "gitleaks": {"trust":"local","purpose":"secret detection and repository leakage checks"},
+    "semgrep": {"trust":"native","purpose":"static security rules and code-pattern analysis"},
+    "sentry": {"trust":"official","purpose":"errors traces releases and incident context"},
+    "grafana": {"trust":"official","purpose":"security operational metrics alerts and anomaly investigation"},
+    "docker": {"trust":"official","purpose":"isolated security harnesses and reproducible integration environments"},
+    "kubernetes": {"trust":"native","purpose":"cluster security diagnostics with gated configuration writes"},
+    "filesystem": {"trust":"local","purpose":"bounded access to policies fixtures reports and security test artifacts"},
+    "python": {"trust":"local","purpose":"policy engine tests DLP fixtures anomaly logic and harness execution"}
+  },
+  "routes": {
+    "policy-yaml-author": ["filesystem","opa","python","github","semgrep","trivy"],
+    "dlp-rule-design": ["filesystem","python","semgrep","gitleaks","github","sentry"],
+    "vault-setup": ["vault","github","filesystem","docker","sentry","grafana"],
+    "consul-intentions": ["consul","github","filesystem","docker","kubernetes","grafana"],
+    "anomaly-triage": ["grafana","sentry","github","filesystem","python","trivy"],
+    "panic-mode": ["grafana","sentry","github","vault","consul","kubernetes"],
+    "security-test-harness": ["docker","trivy","semgrep","gitleaks","python","github"],
+    "seg-integration": ["github","docker","vault","consul","sentry","grafana"]
+  }
+}
