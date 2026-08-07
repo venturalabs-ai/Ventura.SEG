@@ -46,7 +46,7 @@ jobs:
           tar --exclude=.git -czf "Ventura.SEG-${GITHUB_REF_NAME}.tar.gz" .
           sha256sum "Ventura.SEG-${GITHUB_REF_NAME}.tar.gz" sbom.spdx.json > SHA256SUMS
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: Ventura.SEG ${{ github.ref_name }}
