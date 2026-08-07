@@ -21,7 +21,7 @@
   "routes": {
     "policy-yaml-author": ["filesystem","opa","python","github","semgrep","trivy"],
     "dlp-rule-design": ["filesystem","python","semgrep","gitleaks","github","sentry"],
-    "vault-setup": ["vault","github","filesystem","docker","sentry","grafana"],
+    "vault-oidc-setup": ["vault","github","filesystem","docker","sentry","grafana"],
     "consul-intentions": ["consul","github","filesystem","docker","kubernetes","grafana"],
     "anomaly-triage": ["grafana","sentry","github","filesystem","python","trivy"],
     "panic-mode": ["grafana","sentry","github","vault","consul","kubernetes"],
