@@ -11,7 +11,6 @@ on:
 
 permissions:
   contents: read
-  security-events: write
 
 jobs:
   policies:
@@ -19,6 +18,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Ensure critical policy files exist
         run: |
@@ -29,8 +32,9 @@ jobs:
           test -f consul/upstreams.yaml
           echo "Policy files present"
 
-      - name: Fail if default_action is not fail-secure for commands
+      - name: Fail-secure default check
         run: |
+          pip install pyyaml -q
           python3 - <<'PY'
           import yaml
           from pathlib import Path
@@ -55,4 +59,3 @@ jobs:
           pip install -r requirements.txt
           pip install pip-audit
           pip-audit -r requirements.txt || true
-        # || true evita quebrar CI em advisory informativa; ajuste para exit 1 em modo strict
