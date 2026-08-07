@@ -2,89 +2,81 @@
 
 ## Papel no mesh
 
-Ventura.SEG atua como **camada de segurança** (gateway / policy enforcement) e pode ser registrado no Consul para:
+Ventura.SEG atua como **camada de segurança** e registra-se no Consul para discovery, health checks e **Consul Connect** (mTLS via sidecar).
 
-- discovery por outros serviços
-- health checks
-- participação no **Consul Connect** (sidecar Envoy + mTLS)
-- resolução de upstreams healthy
+## Intentions de rede (obrigatório em produção)
 
-O mTLS de ponta a ponta é responsabilidade do **sidecar** (Connect). O código Python registra o serviço, anuncia meta Connect e consulta o catálogo — não substitui o Envoy.
+Modelo **default-deny**: só quem estiver em `allow` consegue abrir conexão mTLS com `ventura-seg`.
 
-## Variáveis de ambiente
+### Arquivos
 
-| Variável | Default | Descrição |
-|----------|---------|-----------|
-| `CONSUL_HTTP_ADDR` | `http://127.0.0.1:8500` | API do Consul |
-| `CONSUL_HTTP_TOKEN` | — | ACL token |
-| `CONSUL_SERVICE_NAME` | `ventura-seg` | Nome do serviço |
-| `CONSUL_SERVICE_PORT` | `8080` | Porta da aplicação |
-| `CONSUL_SERVICE_ID` | `ventura-seg-<hostname>` | ID único |
-| `CONSUL_DATACENTER` | — | DC opcional |
-| `CONSUL_CONNECT` | `true` | Anuncia sidecar Connect |
+```
+consul/intentions/
+├── ventura-seg.hcl      # CLI: consul config write
+├── ventura-seg.json     # API / IntentionManager
+└── ventura-seg-upstreams.hcl  # ventura-seg → vault
+```
 
-## Uso
+### Via CLI
+
+```bash
+consul config write consul/intentions/ventura-seg.hcl
+```
+
+### Via código
 
 ```python
-from service_mesh import ConsulMeshClient
-from audit import AuditLogger
+from service_mesh import ConsulMeshClient, IntentionManager
 
-audit = AuditLogger()
 mesh = ConsulMeshClient(audit_logger=audit)
+intents = IntentionManager(mesh)
 
-# Registra Ventura.SEG no agent local + health check /health
-sid = mesh.register_ventura_service(
+# Opção A — arquivo JSON versionado
+intents.apply_json_file("consul/intentions/ventura-seg.json")
+
+# Opção B — default deny + allow list
+intents.apply_default_deny_allow(
+    destination="ventura-seg",
+    allow_from=["ai-agent", "ai-orchestrator", "admin-api"],
+)
+
+# Opção C — allow pontual
+intents.allow(source="ai-agent", destination="ventura-seg")
+intents.deny(source="untrusted-job", destination="ventura-seg")
+```
+
+### Matriz recomendada
+
+| Source | Destination | Action |
+|--------|-------------|--------|
+| `ai-agent` | `ventura-seg` | allow |
+| `ai-orchestrator` | `ventura-seg` | allow |
+| `admin-api` | `ventura-seg` | allow |
+| `*` | `ventura-seg` | **deny** |
+| `ventura-seg` | `vault` | allow (se Vault no mesh) |
+
+## Registro do serviço
+
+```python
+mesh.register_ventura_service(
     port=8080,
     tags=["security", "dlp", "gateway"],
     health_http="http://127.0.0.1:8080/health",
     enable_connect=True,
 )
-
-# Descobre backend apenas se healthy
-instances = mesh.discover("payment-api", passing_only=True)
-for i in instances:
-    print(i.address, i.port, i.tags)
-
-# Shutdown limpo
-mesh.deregister(sid)
 ```
 
-## Intentions (política de quem pode falar com quem)
+## Variáveis de ambiente
 
-No Consul Connect, defina intentions para que só serviços autorizados alcancem o Ventura.SEG:
+| Variável | Default |
+|----------|---------|
+| `CONSUL_HTTP_ADDR` | `http://127.0.0.1:8500` |
+| `CONSUL_HTTP_TOKEN` | — |
+| `CONSUL_SERVICE_NAME` | `ventura-seg` |
+| `CONSUL_SERVICE_PORT` | `8080` |
+| `CONSUL_CONNECT` | `true` |
 
-```hcl
-# allow agents -> ventura-seg
-Kind = "service-intentions"
-Name = "ventura-seg"
-Sources = [
-  {
-    Name   = "ai-agent"
-    Action = "allow"
-  }
-]
-```
+## Vault + Consul
 
-```bash
-consul config write intention-ventura.hcl
-```
-
-## Sidecar (produção)
-
-Em Kubernetes / Nomad, injete o sidecar Connect em vez de depender de Connect Native:
-
-```yaml
-# exemplo simplificado de anotação
-annotations:
-  consul.hashicorp.com/connect-inject: "true"
-  consul.hashicorp.com/connect-service: "ventura-seg"
-```
-
-O proxy Envoy termina mTLS; a aplicação Ventura.SEG escuta em localhost.
-
-## Relação com Vault
-
-- **Vault**: segredos e auth OIDC (credenciais nunca no agente)
-- **Consul**: identidade de serviço, discovery e mTLS entre serviços
-
-Juntos formam a base HashiCorp para zero-trust em torno dos agentes de IA.
+- **Vault + OIDC**: segredos e auth
+- **Consul intentions**: quem pode falar com a camada de segurança no mesh
