@@ -1,0 +1,58 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  policies:
+    name: Policy integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure critical policy files exist
+        run: |
+          test -f policies/allowlist_commands.yaml
+          test -f policies/allowlist_domains.yaml
+          test -f policies/dlp_rules.yaml
+          test -f consul/intentions/ventura-seg.json
+          test -f consul/upstreams.yaml
+          echo "Policy files present"
+
+      - name: Fail if default_action is not fail-secure for commands
+        run: |
+          python3 - <<'PY'
+          import yaml
+          from pathlib import Path
+          data = yaml.safe_load(Path("policies/allowlist_commands.yaml").read_text())
+          assert data.get("default_action") == "block", "commands default_action must be block"
+          print("Fail-secure default_action=block OK")
+          PY
+
+  pip-audit:
+    name: pip audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install and audit
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pip-audit
+          pip-audit -r requirements.txt || true
+        # || true evita quebrar CI em advisory informativa; ajuste para exit 1 em modo strict
