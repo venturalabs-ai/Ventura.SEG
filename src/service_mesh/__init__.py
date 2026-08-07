@@ -2,5 +2,13 @@
 
 from .consul import ConsulMeshClient, ServiceInstance
 from .intentions import IntentionManager
+from .upstreams import UpstreamManager, Upstream, UpstreamConfig
 
-__all__ = ["ConsulMeshClient", "ServiceInstance", "IntentionManager"]
+__all__ = [
+    "ConsulMeshClient",
+    "ServiceInstance",
+    "IntentionManager",
+    "UpstreamManager",
+    "Upstream",
+    "UpstreamConfig",
+]
