@@ -1,25 +1,94 @@
 # Ventura.SEG — DLP Rules (Data Loss Prevention)
-# Padrões que, se detectados em saídas, devem ser bloqueados ou alertados
+# =================================================
+# Regras versionadas para detecção de dados sensíveis em saídas.
+# action: block | ask | redact
+#
+# block  = bloqueia a ação completamente
+# ask    = requer aprovação humana
+# redact = permite, mas remove/mascara o dado sensível
 
-version: "1.0"
+version: "1.1"
 
 rules:
-  - id: aws-key
+  # === Credenciais de Cloud ===
+  - id: aws-access-key
     pattern: "AKIA[0-9A-Z]{16}"
     action: block
-    description: "Possível AWS Access Key"
+    severity: critical
+    description: "AWS Access Key ID detectada"
 
+  - id: aws-secret-key
+    pattern: "(?i)aws[_-]?secret[_-]?access[_-]?key\\s*[:=]\\s*['\"]?[A-Za-z0-9/+=]{40}"
+    action: block
+    severity: critical
+    description: "AWS Secret Access Key detectada"
+
+  - id: gcp-api-key
+    pattern: "AIza[0-9A-Za-z\\-_]{35}"
+    action: block
+    severity: critical
+    description: "Google Cloud API Key detectada"
+
+  # === Tokens e Secrets genéricos ===
   - id: generic-api-key
-    pattern: "(api[_-]?key|apikey|secret[_-]?key)\s*[:=]\s*['\"]?[A-Za-z0-9_\-]{20,}"
+    pattern: "(?i)(api[_-]?key|apikey|secret[_-]?key|access[_-]?token)\\s*[:=]\\s*['\"]?[A-Za-z0-9_\\-]{20,}"
     action: block
-    description: "Possível API Key genérica"
-
-  - id: private-key-header
-    pattern: "-----BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY-----"
-    action: block
-    description: "Chave privada detectada"
+    severity: high
+    description: "Possível API Key ou Secret genérico"
 
   - id: jwt-token
-    pattern: "eyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*"
+    pattern: "eyJ[A-Za-z0-9_-]{10,}\\.eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}"
     action: ask
+    severity: medium
     description: "Possível JWT Token"
+
+  - id: bearer-token
+    pattern: "(?i)bearer\\s+[A-Za-z0-9\\-._~+/]+=*"
+    action: block
+    severity: high
+    description: "Bearer Token detectado"
+
+  - id: github-token
+    pattern: "(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{36,}"
+    action: block
+    severity: critical
+    description: "GitHub Personal Access Token detectado"
+
+  - id: slack-token
+    pattern: "xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[A-Za-z0-9]{24,}"
+    action: block
+    severity: high
+    description: "Slack Token detectado"
+
+  # === Chaves criptográficas ===
+  - id: private-key-pem
+    pattern: "-----BEGIN (RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----"
+    action: block
+    severity: critical
+    description: "Chave privada PEM detectada"
+
+  # === Dados pessoais (LGPD / GDPR) ===
+  - id: cpf-br
+    pattern: "\\b\\d{3}\\.?\\d{3}\\.?\\d{3}-?\\d{2}\\b"
+    action: redact
+    severity: medium
+    description: "Possível CPF brasileiro"
+
+  - id: credit-card
+    pattern: "\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\\b"
+    action: block
+    severity: critical
+    description: "Possível número de cartão de crédito"
+
+  # === HashiCorp Vault específico ===
+  - id: vault-token
+    pattern: "hvs\\.[A-Za-z0-9_-]{24,}"
+    action: block
+    severity: critical
+    description: "HashiCorp Vault Token detectado"
+
+  - id: vault-path-leak
+    pattern: "(?i)vault.*?(secret/|kv/|cubbyhole/)"
+    action: ask
+    severity: medium
+    description: "Possível path de Vault sendo exposto"
