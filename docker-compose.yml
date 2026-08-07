@@ -1,0 +1,10 @@
+services:
+  ventura-seg:
+    build: .
+    environment:
+      VENTURA_SEG_LOG_LEVEL: ${VENTURA_SEG_LOG_LEVEL:-INFO}
+      VAULT_ADDR: ${VAULT_ADDR:-}
+    volumes:
+      - ./policies:/app/policies:ro
+      - ./consul:/app/consul:ro
+    restart: unless-stopped
