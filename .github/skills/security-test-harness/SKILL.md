@@ -1,6 +1,6 @@
 ---
 name: security-test-harness
-description: Add adversarial regression tests for Ventura.SEG security controls using safe synthetic fixtures. Use when a control changes or a security bypass is discovered. Do not use for unrelated feature tests or live offensive testing.
+description: Add adversarial regression tests for Ventura.SEG security controls using safe synthetic fixtures. Use when a control changes or a security bypass is discovered. Do not use when writing unrelated feature tests or performing live offensive testing.
 ---
 
 # Security test harness
