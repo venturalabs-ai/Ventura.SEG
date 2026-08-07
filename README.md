@@ -22,14 +22,41 @@ Em sistemas multi-agentes, a maior superfície de ataque não é o modelo em si,
 
 ---
 
-## 🎯 Objetivos Principais
+## ✅ Status de Implementação
 
-1. Proteger permanentemente os dados sensíveis manipulados por outros agentes
-2. Detectar anomalias com mínimo consumo de recursos
-3. Validar toda anomalia através de pipeline multi-estágio
-4. Corrigir falhas de forma autônoma (modo regenerativo)
-5. Manter loop contínuo: **Observar → Detectar → Validar → Corrigir → Verificar → Aprender**
-6. Máxima performance com o menor overhead possível
+| Módulo | Status | Descrição |
+|--------|--------|-----------|
+| **Motor de Permissões** | ✅ Implementado | YAML + hot-reload + logs |
+| **Sistema de Auditoria** | ✅ Implementado | Logs estruturados JSONL imutáveis |
+| Gateway de Entrada | 🔳 Scaffold | Sanitização de conteúdo externo |
+| Gateway de Saída (DLP) | 🔳 Scaffold | Validação de saída e exfiltração |
+| Proxy de Credenciais | 🔳 Scaffold | Segredos fora do perímetro |
+| Sandbox | 🔳 Scaffold | Isolamento real de execução |
+
+---
+
+## 🚀 Quickstart (Motor de Permissões)
+
+```bash
+pip install -r requirements.txt
+```
+
+```python
+from permissions import PermissionEngine, Action
+from audit import AuditLogger
+
+# Inicializa auditoria + motor
+audit = AuditLogger(log_dir="logs/audit")
+engine = PermissionEngine.from_policy_dir("policies/", audit_logger=audit)
+
+# Avalia comandos
+decision = engine.evaluate_command("rm -rf /")
+print(decision.action)        # Action.BLOCK
+print(decision.reason)        # rm -rf e variantes destrutivas
+
+# Hot-reload dinâmico (sem reiniciar)
+engine.reload()
+```
 
 ---
 
@@ -41,24 +68,22 @@ Ventura.SEG/
 ├── LICENSE                 # Apache License 2.0
 ├── SECURITY.md
 ├── THREAT_MODEL.md
+├── requirements.txt
 ├── docs/
-│   ├── architecture.md
-│   ├── policies.md
-│   └── incident-response.md
+│   └── architecture.md
 ├── src/
-│   ├── gateway_in/
-│   ├── gateway_out/
-│   ├── permissions/
-│   ├── credential_proxy/
-│   ├── sandbox/
-│   └── audit/
+│   ├── permissions/       # ✅ Motor completo
+│   ├── audit/             # ✅ Logger imutável
+│   ├── gateway_in/        # Scaffold
+│   ├── gateway_out/       # Scaffold
+│   ├── credential_proxy/  # Scaffold
+│   └── sandbox/           # Scaffold
 ├── policies/
-│   ├── allowlist_domains.yaml
 │   ├── allowlist_commands.yaml
+│   ├── allowlist_domains.yaml
 │   └── dlp_rules.yaml
-├── tests/
-├── examples/
-└── .github/workflows/
+└── tests/
+    └── test_permission_engine.py
 ```
 
 ---
@@ -69,27 +94,15 @@ Ventura.SEG/
 - Exfiltração de dados
 - Escalonamento de privilégio
 - Abuso de credenciais
-- Erros destrutivos do modelo (ações não maliciosas mas perigosas)
+- Erros destrutivos do modelo
 
 ---
 
 ## 📝 Licença
 
-Este projeto está licenciado sob a **Apache License 2.0** — uma licença open-source real, permissiva e amplamente reconhecida para projetos de segurança e infraestrutura.
+**Apache License 2.0** — licença open-source real e válida.
 
-> **Nota importante sobre certificações**:  
-> Certificações como SOC 2 Type II, ISO 27001, LGPD readiness, GDPR etc. são atributos de **organizações e processos operacionais**, não de repositórios de código. Este repositório aplica apenas licenças open-source **válidas e reais**. Nenhuma certificação organizacional é reivindicada aqui.
-
----
-
-## 🚀 Status Atual
-
-Repositório criado e inicializado em **07 de agosto de 2026**.
-
-Próximos passos planejados:
-- Implementação dos módulos core (gateway, permissions, audit e regeneração)
-- Testes adversariais
-- Documentação completa de arquitetura
+> Certificações organizacionais (SOC 2, ISO 27001, LGPD etc.) não são atribuídas a repositórios de código.
 
 ---
 
