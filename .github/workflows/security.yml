@@ -20,17 +20,21 @@ jobs:
   policies:
     name: Policy integrity
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"
 
       - name: Ensure critical policy files exist
         run: |
+          set -euo pipefail
           test -f policies/allowlist_commands.yaml
           test -f policies/allowlist_domains.yaml
           test -f policies/dlp_rules.yaml
@@ -40,8 +44,9 @@ jobs:
 
       - name: Validate fail-secure defaults
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
-          pip install pyyaml
+          pip install 'pyyaml>=6.0.2,<7.0'
           python - <<'PY'
           import yaml
           from pathlib import Path
@@ -54,12 +59,15 @@ jobs:
   dependency-audit:
     name: Dependency audit
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"
           cache: pip
@@ -67,6 +75,7 @@ jobs:
 
       - name: Audit Python dependencies
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
-          pip install pip-audit
+          pip install 'pip-audit>=2.10,<3.0'
           pip-audit -r requirements.txt
