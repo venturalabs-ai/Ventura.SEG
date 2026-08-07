@@ -14,6 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Validate SemVer tag and VERSION
         shell: bash
         run: |
@@ -24,6 +27,24 @@ jobs:
           fi
           VERSION=$(tr -d '[:space:]' < VERSION)
           test "$TAG" = "v$VERSION" || { echo "Tag $TAG does not match VERSION $VERSION" >&2; exit 1; }
+      - name: Install and validate release
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          PYTHONPATH=src pytest tests/ -q --cov=src --cov-branch --cov-fail-under=60
+          bandit -q -r src
+          pip-audit -r requirements.txt
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: sbom.spdx.json
+      - name: Package source and checksums
+        shell: bash
+        run: |
+          tar --exclude=.git -czf "Ventura.SEG-${GITHUB_REF_NAME}.tar.gz" .
+          sha256sum "Ventura.SEG-${GITHUB_REF_NAME}.tar.gz" sbom.spdx.json > SHA256SUMS
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -32,3 +53,7 @@ jobs:
           generate_release_notes: true
           draft: false
           prerelease: false
+          files: |
+            Ventura.SEG-${{ github.ref_name }}.tar.gz
+            sbom.spdx.json
+            SHA256SUMS
