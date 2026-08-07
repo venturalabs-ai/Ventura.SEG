@@ -1,0 +1,28 @@
+# Ventura.SEG — Upstreams (Consul Connect)
+# ==========================================
+# Serviços que o sidecar do ventura-seg pode chamar via mTLS local.
+# Cada upstream é exposto em 127.0.0.1:<local_bind_port> dentro do pod/host.
+#
+# A aplicação Ventura.SEG deve apontar clientes HTTP para localhost:PORT
+# (não para o endereço real do serviço). O Envoy faz o resto.
+
+version: "1.0"
+
+service_name: ventura-seg
+service_port: 8080
+
+upstreams:
+  - destination_name: vault
+    local_bind_port: 8200
+    local_bind_address: "127.0.0.1"
+    description: "HashiCorp Vault (segredos / OIDC)"
+
+  - destination_name: consul
+    local_bind_port: 8500
+    local_bind_address: "127.0.0.1"
+    description: "Consul API (opcional, se no mesh)"
+
+  - destination_name: audit-collector
+    local_bind_port: 9100
+    local_bind_address: "127.0.0.1"
+    description: "Coletor de logs / SIEM interno"
