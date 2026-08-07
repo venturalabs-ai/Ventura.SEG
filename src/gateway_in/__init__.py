@@ -7,4 +7,6 @@ do agente (arquivos, resultados de busca, respostas de ferramentas MCP).
 Princípio: Nunca confiar em conteúdo externo por padrão.
 """
 
-# Módulo em desenvolvimento — scaffold inicial
+from .sanitizer import ContentSanitizer, SanitizationResult, SanitizationAction
+
+__all__ = ["ContentSanitizer", "SanitizationResult", "SanitizationAction"]
