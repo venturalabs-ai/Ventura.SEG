@@ -1,12 +1,10 @@
 """
 Ventura.SEG — Gateway de Saída (DLP)
-====================================
-Data Loss Prevention real.
+=====================================
+Data Loss Prevention policy gateway.
 
-Valida todo conteúdo que tenta sair do agente (comandos, body de requisições,
+Valida conteúdo que tenta sair do agente (comandos, body de requisições,
 escrita em arquivos) contra regras YAML de DLP.
-
-Princípio: Nenhuma ação sai sem checagem.
 """
 
 from __future__ import annotations
@@ -29,15 +27,16 @@ class DLPAction(str, Enum):
     ALLOW = "allow"
     BLOCK = "block"
     ASK = "ask"
+    REDACT = "redact"
 
 
 @dataclass(frozen=True)
 class DLPDecision:
-    """Resultado imutável de uma avaliação DLP."""
+    """Resultado de uma avaliação DLP."""
     action: DLPAction
     rule_id: Optional[str]
     reason: str
-    matched_content: Optional[str] = None  # trecho que disparou a regra (redacted se necessário)
+    matched_content: Optional[str] = None
     confidence: float = 1.0
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -69,15 +68,7 @@ class DLPRule:
 
 
 class DLPGateway:
-    """
-    Gateway de Saída com Data Loss Prevention.
-
-    Uso:
-        dlp = DLPGateway.from_policy_file("policies/dlp_rules.yaml", audit_logger=audit)
-        decision = dlp.scan("AKIAIOSFODNN7EXAMPLE")
-        if decision.blocked:
-            ...
-    """
+    """Gateway de saída orientado por políticas DLP."""
 
     def __init__(
         self,
@@ -97,7 +88,6 @@ class DLPGateway:
         policy_path: str | Path,
         audit_logger: Any = None,
     ) -> "DLPGateway":
-        """Carrega regras DLP a partir de um arquivo YAML."""
         path = Path(policy_path)
         rules: list[DLPRule] = []
         default_action = DLPAction.ALLOW
@@ -131,29 +121,17 @@ class DLPGateway:
                 decision="success",
                 reason=f"Carregadas {len(rules)} regras DLP",
             )
-
         return gateway
 
     def scan(self, content: str, actor: str = "agent", context: str = "output") -> DLPDecision:
-        """
-        Escaneia um conteúdo de saída (comando, body HTTP, texto de arquivo, etc.).
-
-        Retorna a primeira regra que der match (prioridade = ordem no YAML).
-        """
         if not content or not content.strip():
-            return DLPDecision(
-                action=DLPAction.ALLOW,
-                rule_id=None,
-                reason="Conteúdo vazio",
-            )
+            return DLPDecision(DLPAction.ALLOW, None, "Conteúdo vazio")
 
         for rule in self.rules:
             match = rule.compiled.search(content)
             if match:
-                # Redact parcial do match para não vazar segredo no log
                 matched = match.group(0)
                 redacted = matched[:4] + "***" + matched[-4:] if len(matched) > 8 else "***"
-
                 decision = DLPDecision(
                     action=rule.action,
                     rule_id=rule.id,
@@ -176,7 +154,6 @@ class DLPGateway:
         return decision
 
     def reload(self) -> bool:
-        """Hot-reload das regras DLP."""
         if self._policy_path is None:
             return False
         try:
