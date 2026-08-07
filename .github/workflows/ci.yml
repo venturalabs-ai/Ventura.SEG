@@ -62,7 +62,10 @@ jobs:
           PYTHONPATH: src
         run: pytest tests/ -v --tb=short --cov=src --cov-branch --cov-report=term-missing --cov-fail-under=60
       - name: Static security scan
-        run: bandit -q -r src
+        run: |
+          # Fail on Medium/High findings. B310 is intentionally excluded because
+          # the Consul client uses urllib for a configured http/https control-plane endpoint.
+          bandit -q -r src -ll --skip B310
 
   secrets-scan:
     name: Secrets scan

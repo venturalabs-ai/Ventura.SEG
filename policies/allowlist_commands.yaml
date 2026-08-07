@@ -3,53 +3,55 @@
 # action: allow | block | ask
 
 version: "1.0"
-default_action: block   # fail-secure por padrão
+default_action: block
 
 rules:
-  # === Comandos seguros de leitura ===
-  - id: read-safe
-    pattern: "^(ls|cat|head|tail|pwd|whoami|date|echo|uname|df|du|free|ps|top|htop)$"
+  - id: ls-safe-options
+    pattern: '^ls(?:\s+-[A-Za-z]+)*$'
     action: allow
-    description: "Comandos básicos de leitura e informação do sistema"
+    description: "Listagem de diretório com flags simples, sem caminhos arbitrários"
+
+  - id: read-safe
+    pattern: '^(ls|cat|head|tail|pwd|whoami|date|echo|uname|df|du|free|ps|top|htop)$'
+    action: allow
+    description: "Comandos básicos de leitura e informação do sistema sem argumentos"
 
   - id: git-read
-    pattern: "^git (status|log|diff|show|branch|remote|fetch)$"
+    pattern: '^git (status|log|diff|show|branch|remote|fetch)$'
     action: allow
     description: "Operações de leitura do Git"
 
-  # === Comandos que exigem aprovação humana ===
   - id: git-write
-    pattern: "^git (add|commit|push|pull|checkout|merge|rebase|reset)"
+    pattern: '^git (add|commit|push|pull|checkout|merge|rebase|reset)'
     action: ask
     description: "Operações de escrita no Git — requer aprovação"
 
   - id: package-managers
-    pattern: "^(pip|npm|yarn|pnpm|cargo|go|apt|yum|dnf) (install|add|update|upgrade)"
+    pattern: '^(pip|npm|yarn|pnpm|cargo|go|apt|yum|dnf) (install|add|update|upgrade)'
     action: ask
     description: "Instalação de pacotes — requer aprovação"
 
-  # === Comandos perigosos (bloqueados) ===
   - id: destructive-rm
-    pattern: "rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-rf|-fr)"
+    pattern: 'rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-rf|-fr)'
     action: block
     description: "rm -rf e variantes destrutivas"
 
   - id: privilege-escalation
-    pattern: "^(sudo|su|chmod|chown|chgrp|setuid|setgid)"
+    pattern: '^(sudo|su|chmod|chown|chgrp|setuid|setgid)'
     action: block
     description: "Tentativas de escalonamento de privilégio"
 
   - id: sensitive-paths
-    pattern: ".*(/\.ssh|/\.aws|/\.kube|/\.env|/\.gnupg|/etc/passwd|/etc/shadow).*"
+    pattern: '.*(/\.ssh|/\.aws|/\.kube|/\.env|/\.gnupg|/etc/passwd|/etc/shadow).*'
     action: block
     description: "Acesso a caminhos sensíveis"
 
   - id: network-dangerous
-    pattern: "^(curl|wget|nc|ncat|netcat).*(-X\s*(POST|PUT|DELETE)|--data|--upload)"
+    pattern: '^(curl|wget|nc|ncat|netcat).*(-X\s*(POST|PUT|DELETE)|--data|--upload)'
     action: block
     description: "Requisições de rede com potencial de exfiltração"
 
   - id: shell-escape
-    pattern: ".*(;|\||&|`|\$\(|\$\{).*"
+    pattern: '.*(;|\||&|`|\$\(|\$\{).*'
     action: block
     description: "Possível shell injection / command chaining"

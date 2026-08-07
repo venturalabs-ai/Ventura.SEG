@@ -10,7 +10,6 @@
 version: "1.1"
 
 rules:
-  # === Credenciais de Cloud ===
   - id: aws-access-key
     pattern: "AKIA[0-9A-Z]{16}"
     action: block
@@ -29,7 +28,6 @@ rules:
     severity: critical
     description: "Google Cloud API Key detectada"
 
-  # === Tokens e Secrets genéricos ===
   - id: generic-api-key
     pattern: "(?i)(api[_-]?key|apikey|secret[_-]?key|access[_-]?token)\\s*[:=]\\s*['\"]?[A-Za-z0-9_\\-]{20,}"
     action: block
@@ -37,7 +35,7 @@ rules:
     description: "Possível API Key ou Secret genérico"
 
   - id: jwt-token
-    pattern: "eyJ[A-Za-z0-9_-]{10,}\\.eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}"
+    pattern: "eyJ[A-Za-z0-9_-]{10,}\\.eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{8,}"
     action: ask
     severity: medium
     description: "Possível JWT Token"
@@ -60,14 +58,12 @@ rules:
     severity: high
     description: "Slack Token detectado"
 
-  # === Chaves criptográficas ===
   - id: private-key-pem
     pattern: "-----BEGIN (RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----"
     action: block
     severity: critical
     description: "Chave privada PEM detectada"
 
-  # === Dados pessoais (LGPD / GDPR) ===
   - id: cpf-br
     pattern: "\\b\\d{3}\\.?\\d{3}\\.?\\d{3}-?\\d{2}\\b"
     action: redact
@@ -80,7 +76,6 @@ rules:
     severity: critical
     description: "Possível número de cartão de crédito"
 
-  # === HashiCorp Vault específico ===
   - id: vault-token
     pattern: "hvs\\.[A-Za-z0-9_-]{24,}"
     action: block

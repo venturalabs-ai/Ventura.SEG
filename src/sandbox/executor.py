@@ -5,7 +5,7 @@ Isola a execução de comandos em ambiente restrito.
 
 Níveis de isolamento suportados:
 - none     : sem isolamento (apenas para testes)
-- process  : subprocess com limites básicos
+- process  : subprocess com limites básicos, sem shell
 - docker   : container Docker hardenizado (recomendado)
 
 Princípio: Isolamento real, não apenas checagem em software.
@@ -13,12 +13,13 @@ Princípio: Isolamento real, não apenas checagem em software.
 
 from __future__ import annotations
 
-import subprocess
+import shlex
+import subprocess  # nosec B404 - subprocess is the explicit execution primitive of this sandbox
 import tempfile
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 try:
     from audit.logger import AuditLogger
@@ -44,15 +45,7 @@ class ExecutionResult:
 
 
 class SandboxExecutor:
-    """
-    Executor com isolamento configurável.
-
-    Uso:
-        sandbox = SandboxExecutor(level=IsolationLevel.DOCKER, audit_logger=audit)
-        result = sandbox.run("ls -la", timeout=10)
-        if result.success:
-            print(result.stdout)
-    """
+    """Executor com isolamento configurável."""
 
     def __init__(
         self,
@@ -73,13 +66,9 @@ class SandboxExecutor:
         self.memory_limit = memory_limit
         self.cpu_limit = cpu_limit
         self.audit = audit_logger
-
         self.work_dir.mkdir(parents=True, exist_ok=True)
 
     def run(self, command: str, timeout: int = 30, actor: str = "agent") -> ExecutionResult:
-        """
-        Executa um comando dentro do nível de isolamento configurado.
-        """
         if self.level == IsolationLevel.NONE:
             result = self._run_process(command, timeout, isolated=False)
         elif self.level == IsolationLevel.PROCESS:
@@ -95,16 +84,25 @@ class SandboxExecutor:
                 isolation=self.level,
                 reason="invalid_isolation_level",
             )
-
         self._audit(command, result, actor)
         return result
 
     def _run_process(self, command: str, timeout: int, isolated: bool) -> ExecutionResult:
-        """Execução via subprocess (com ou sem restrições básicas)."""
+        """Executa diretamente argv sem invocar shell, evitando expansão/injection de shell."""
         try:
-            completed = subprocess.run(
-                command,
-                shell=True,
+            argv = shlex.split(command)
+            if not argv:
+                return ExecutionResult(
+                    success=False,
+                    exit_code=-1,
+                    stdout="",
+                    stderr="Comando vazio",
+                    isolation=IsolationLevel.PROCESS if isolated else IsolationLevel.NONE,
+                    reason="empty_command",
+                )
+            completed = subprocess.run(  # nosec B603 - argv is parsed without shell; permission policy gates commands upstream
+                argv,
+                shell=False,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -118,14 +116,20 @@ class SandboxExecutor:
                 isolation=IsolationLevel.PROCESS if isolated else IsolationLevel.NONE,
                 reason="ok" if completed.returncode == 0 else "non_zero_exit",
             )
-        except subprocess.TimeoutExpired:
+        except (ValueError, subprocess.TimeoutExpired) as exc:
+            if isinstance(exc, subprocess.TimeoutExpired):
+                reason = "timeout"
+                stderr = f"Timeout após {timeout}s"
+            else:
+                reason = "invalid_command"
+                stderr = str(exc)
             return ExecutionResult(
                 success=False,
                 exit_code=-1,
                 stdout="",
-                stderr=f"Timeout após {timeout}s",
+                stderr=stderr,
                 isolation=IsolationLevel.PROCESS if isolated else IsolationLevel.NONE,
-                reason="timeout",
+                reason=reason,
             )
         except Exception as exc:
             return ExecutionResult(
@@ -138,16 +142,7 @@ class SandboxExecutor:
             )
 
     def _run_docker(self, command: str, timeout: int) -> ExecutionResult:
-        """
-        Execução dentro de container Docker hardenizado.
-
-        Flags de segurança aplicadas:
-        - --network none (se network_disabled)
-        - --read-only
-        - --cap-drop ALL
-        - --memory e --cpus limitados
-        - --security-opt no-new-privileges
-        """
+        """Executa em Docker com rede opcionalmente desabilitada e rootfs somente leitura."""
         docker_cmd = [
             "docker", "run", "--rm",
             f"--memory={self.memory_limit}",
@@ -155,22 +150,20 @@ class SandboxExecutor:
             "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges:true",
         ]
-
         if self.network_disabled:
             docker_cmd.extend(["--network", "none"])
-
         if self.read_only_root:
             docker_cmd.append("--read-only")
-            docker_cmd.extend(["--tmpfs", "/tmp:rw,noexec,nosuid,size=64m"])
-
+            docker_cmd.extend(["--tmpfs", "/tmp:rw,noexec,nosuid,size=64m"])  # nosec B108 - container-internal tmpfs mount, not host temp-file creation
         docker_cmd.extend([self.docker_image, "sh", "-c", command])
 
         try:
-            completed = subprocess.run(
+            completed = subprocess.run(  # nosec B603 - executable argv is fixed to docker; command is confined inside configured container
                 docker_cmd,
+                shell=False,
                 capture_output=True,
                 text=True,
-                timeout=timeout + 5,  # margem para startup do container
+                timeout=timeout + 5,
             )
             return ExecutionResult(
                 success=completed.returncode == 0,
@@ -182,32 +175,11 @@ class SandboxExecutor:
                 metadata={"image": self.docker_image},
             )
         except FileNotFoundError:
-            return ExecutionResult(
-                success=False,
-                exit_code=-1,
-                stdout="",
-                stderr="Docker não encontrado no PATH",
-                isolation=IsolationLevel.DOCKER,
-                reason="docker_not_found",
-            )
+            return ExecutionResult(False, -1, "", "Docker não encontrado no PATH", IsolationLevel.DOCKER, "docker_not_found")
         except subprocess.TimeoutExpired:
-            return ExecutionResult(
-                success=False,
-                exit_code=-1,
-                stdout="",
-                stderr=f"Timeout após {timeout}s (Docker)",
-                isolation=IsolationLevel.DOCKER,
-                reason="timeout",
-            )
+            return ExecutionResult(False, -1, "", f"Timeout após {timeout}s (Docker)", IsolationLevel.DOCKER, "timeout")
         except Exception as exc:
-            return ExecutionResult(
-                success=False,
-                exit_code=-1,
-                stdout="",
-                stderr=str(exc),
-                isolation=IsolationLevel.DOCKER,
-                reason="execution_error",
-            )
+            return ExecutionResult(False, -1, "", str(exc), IsolationLevel.DOCKER, "execution_error")
 
     def _audit(self, command: str, result: ExecutionResult, actor: str) -> None:
         if self.audit is None:

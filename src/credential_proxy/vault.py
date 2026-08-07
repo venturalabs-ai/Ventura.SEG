@@ -104,10 +104,6 @@ class VaultSecretLoader:
                 metadata={"auth_method": self.auth_method.value},
             )
 
-    # ------------------------------------------------------------------
-    # Autenticação OIDC / JWT
-    # ------------------------------------------------------------------
-
     @classmethod
     def from_oidc(
         cls,
@@ -120,19 +116,6 @@ class VaultSecretLoader:
         audit_logger: Any = None,
         method: VaultAuthMethod = VaultAuthMethod.OIDC,
     ) -> "VaultSecretLoader":
-        """
-        Autentica no Vault usando o auth method OIDC ou JWT.
-
-        Fluxo:
-          1. Obtém um JWT do Identity Provider (ou de arquivo/env)
-          2. Envia o JWT ao Vault (auth/oidc ou auth/jwt)
-          3. Vault valida o token com o IdP / chaves configuradas
-          4. Vault devolve um client token de curta duração
-          5. Esse token é usado para ler segredos (nunca exposto ao agente)
-
-        Parâmetros podem vir de argumentos ou de variáveis de ambiente:
-          VAULT_OIDC_ROLE, VAULT_OIDC_JWT, VAULT_OIDC_JWT_PATH, VAULT_OIDC_PATH
-        """
         if not HVAC_AVAILABLE:
             raise ImportError("Pacote 'hvac' não instalado. Execute: pip install hvac")
 
@@ -141,7 +124,6 @@ class VaultSecretLoader:
         auth_path = auth_path or os.getenv("VAULT_OIDC_PATH") or method.value
         jwt_token = jwt or os.getenv("VAULT_OIDC_JWT")
 
-        # JWT a partir de arquivo (comum em Kubernetes: projected service account)
         if not jwt_token:
             path = jwt_path or os.getenv("VAULT_OIDC_JWT_PATH")
             if path and Path(path).is_file():
@@ -159,8 +141,6 @@ class VaultSecretLoader:
         client = hvac.Client(url=addr)
 
         try:
-            # hvac: auth.jwt.jwt_login funciona para mount jwt e oidc
-            # (ambos usam o mesmo backend type em versões recentes do Vault)
             login_response = client.auth.jwt.jwt_login(
                 role=role,
                 jwt=jwt_token,
@@ -196,7 +176,6 @@ class VaultSecretLoader:
                     "auth_path": auth_path,
                     "lease_duration": lease,
                     "auth_method": method.value,
-                    # Nunca logar o JWT nem o client_token
                 },
             )
 
@@ -213,13 +192,6 @@ class VaultSecretLoader:
 
     @classmethod
     def from_env(cls, proxy: CredentialProxy, audit_logger: Any = None) -> "VaultSecretLoader":
-        """
-        Escolhe automaticamente o método de auth com base em VAULT_AUTH_METHOD.
-
-          VAULT_AUTH_METHOD=token  → token estático
-          VAULT_AUTH_METHOD=oidc   → from_oidc (mount oidc)
-          VAULT_AUTH_METHOD=jwt    → from_oidc (mount jwt)
-        """
         method_raw = (os.getenv("VAULT_AUTH_METHOD") or "token").lower().strip()
         try:
             method = VaultAuthMethod(method_raw)
@@ -241,11 +213,6 @@ class VaultSecretLoader:
         jwt: Optional[str] = None,
         jwt_path: Optional[str] = None,
     ) -> bool:
-        """
-        Renova a sessão Vault com um novo JWT (token rotation / lease expirado).
-
-        Mantém o mesmo role e auth_path usados no login original.
-        """
         if self.auth_method not in (VaultAuthMethod.OIDC, VaultAuthMethod.JWT):
             return False
         if not self._oidc_role:
@@ -294,10 +261,6 @@ class VaultSecretLoader:
                 )
             return False
 
-    # ------------------------------------------------------------------
-    # Leitura de segredos (inalterada em comportamento)
-    # ------------------------------------------------------------------
-
     def load_kv(
         self,
         mount: str,
@@ -308,11 +271,6 @@ class VaultSecretLoader:
         description: str = "",
         kv_version: int = 2,
     ) -> CredentialHandle:
-        """
-        Lê um segredo do KV engine e registra no proxy.
-
-        O valor real nunca é logado — apenas o handle_name e o path.
-        """
         try:
             if kv_version == 2:
                 response = self.client.secrets.kv.v2.read_secret_version(
@@ -368,7 +326,6 @@ class VaultSecretLoader:
             raise
 
     def load_multiple(self, secrets: list[dict]) -> list[CredentialHandle]:
-        """Carrega múltiplos segredos de uma vez."""
         handles = []
         for item in secrets:
             handle = self.load_kv(
