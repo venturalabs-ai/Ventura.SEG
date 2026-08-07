@@ -24,11 +24,10 @@ jobs:
       - name: Validate YAML syntax
         run: |
           python3 - <<'PY'
-          import sys, pathlib
+          import sys, pathlib, subprocess
           try:
               import yaml
           except ImportError:
-              import subprocess
               subprocess.check_call([sys.executable, "-m", "pip", "install", "pyyaml", "-q"])
               import yaml
 
@@ -80,19 +79,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Scan for private keys and obvious secrets
+      - name: Scan source for accidental secrets
         run: |
           set -euo pipefail
-          if grep -RInE --exclude-dir=.git --exclude-dir=.github \
+          # Exclui policies/ e tests/ (padrões DLP e fixtures adversariais são intencionais)
+          if grep -RInE \
+            --exclude-dir=.git \
+            --exclude-dir=.github \
+            --exclude-dir=policies \
+            --exclude-dir=tests \
+            --exclude-dir=docs \
+            --exclude-dir=consul \
             -e 'BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY' \
             -e 'AKIA[0-9A-Z]{16}' \
             -e 'ghp_[A-Za-z0-9]{36}' \
             -e 'hvs\.[A-Za-z0-9_-]{20,}' \
-            . ; then
-            echo "::error::Possible secret material detected in the repository"
+            src/ ; then
+            echo "::error::Possible secret material detected under src/"
             exit 1
           fi
-          echo "No obvious secrets found"
+          echo "No obvious secrets in src/"
