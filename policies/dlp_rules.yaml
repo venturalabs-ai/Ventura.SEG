@@ -1,0 +1,25 @@
+# Ventura.SEG — DLP Rules (Data Loss Prevention)
+# Padrões que, se detectados em saídas, devem ser bloqueados ou alertados
+
+version: "1.0"
+
+rules:
+  - id: aws-key
+    pattern: "AKIA[0-9A-Z]{16}"
+    action: block
+    description: "Possível AWS Access Key"
+
+  - id: generic-api-key
+    pattern: "(api[_-]?key|apikey|secret[_-]?key)\s*[:=]\s*['\"]?[A-Za-z0-9_\-]{20,}"
+    action: block
+    description: "Possível API Key genérica"
+
+  - id: private-key-header
+    pattern: "-----BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY-----"
+    action: block
+    description: "Chave privada detectada"
+
+  - id: jwt-token
+    pattern: "eyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*"
+    action: ask
+    description: "Possível JWT Token"
