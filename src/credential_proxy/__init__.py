@@ -7,4 +7,6 @@ sem que o agente jamais os veja. Aplica allowlist de domínios.
 Princípio: Segredo nunca exposto ao modelo.
 """
 
-# Módulo em desenvolvimento — scaffold inicial
+from .proxy import CredentialProxy, CredentialHandle, InjectionResult
+
+__all__ = ["CredentialProxy", "CredentialHandle", "InjectionResult"]
