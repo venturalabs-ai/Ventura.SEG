@@ -1,31 +1,33 @@
 # Ventura.SEG
 
-**Camada de Segurança Full-time e Regenerativa para Sistemas Multi-Agentes de IA**
+**Camada de segurança para sistemas multiagentes de IA**
 
-Ventura.SEG é uma infraestrutura de proteção que atua como **guardião permanente** do tráfego de entrada e saída de agentes de IA. Ele intercepta, valida, registra e bloqueia ações perigosas, protegendo dados sensíveis de todos os agentes do sistema.
+Ventura.SEG é uma infraestrutura de proteção para tráfego de entrada e saída de agentes de IA. O projeto implementa controles de permissões, DLP, credenciais, sandbox, auditoria e mitigação de conteúdo de entrada. Os controles devem ser avaliados no contexto do runtime e da infraestrutura onde forem implantados.
 
-> Desenvolvido por **Ventura Autor** (Wemerson Mota de Oliveira)
-
----
-
-## ✅ Status Final de Implementação
-
-| Módulo | Status | Descrição |
-|--------|--------|-----------|
-| **Motor de Permissões** | ✅ Completo | YAML + hot-reload + auditoria |
-| **Sistema de Auditoria** | ✅ Completo | Logs JSONL imutáveis |
-| **Gateway de Saída (DLP)** | ✅ Completo | Regras YAML (AWS, GitHub, Vault, CPF…) |
-| **Proxy de Credenciais** | ✅ Completo | Handles opacos + allowlist de domínios |
-| **HashiCorp Vault** | ✅ Completo | Carregamento de segredos KV v1/v2 |
-| **Monitor de Segredos** | ✅ Completo | Higiene + status Vault + alertas |
-| **Gateway de Entrada** | ✅ Completo | Sanitização + anti prompt-injection |
-| **Sandbox** | ✅ Completo | Process + Docker hardenizado |
-| **Loop Regenerativo** | ✅ Completo | Self-healing (suggest / ask / auto) |
-| **Testes de Segurança** | ✅ Completo | DLP, Gateway In, Proxy, Monitor, Permissões |
+> Desenvolvido por **Ventura Labs AI** — Wemerson Mota de Oliveira
 
 ---
 
-## 🚀 Quickstart
+## Status de implementação
+
+| Módulo | Status | Evidência principal |
+|---|---|---|
+| **Motor de Permissões** | Implementado | YAML + hot-reload + testes |
+| **Sistema de Auditoria** | Implementado | JSONL append-only durante a escrita; não afirma imutabilidade criptográfica |
+| **Gateway de Saída (DLP)** | Implementado | Regras YAML + testes |
+| **Proxy de Credenciais** | Implementado | Handles opacos + allowlist de domínios |
+| **HashiCorp Vault** | Implementado / opcional | Carregamento KV v1/v2 |
+| **Monitor de Segredos** | Implementado | Higiene + status Vault + alertas |
+| **Gateway de Entrada** | Implementado | Detecção/sanitização e mitigação de padrões de prompt injection |
+| **Sandbox** | Implementado | Process + Docker; segurança depende do host/runtime |
+| **Loop Regenerativo** | Implementado | suggest / ask / auto |
+| **Testes de Segurança** | Implementados | DLP, Gateway In, Proxy, Monitor, Permissões |
+
+> **Nota:** “implementado” significa que o componente existe no repositório e possui o nível de teste/documentação indicado. Não significa certificação, ausência de vulnerabilidades ou cobertura completa contra uma classe de ataque.
+
+---
+
+## Quickstart
 
 ```bash
 pip install -r requirements.txt
@@ -33,7 +35,7 @@ pytest tests/ -v
 ```
 
 ```python
-from permissions import PermissionEngine, Action
+from permissions import PermissionEngine
 from gateway_out.dlp import DLPGateway
 from gateway_in import ContentSanitizer
 from credential_proxy import CredentialProxy, SecretsMonitor
@@ -42,108 +44,80 @@ from audit import AuditLogger
 
 audit = AuditLogger(log_dir="logs/audit")
 
-# 1. Motor de permissões
 engine = PermissionEngine.from_policy_dir("policies/", audit_logger=audit)
 decision = engine.evaluate_command("rm -rf /")
-# → Action.BLOCK
 
-# 2. DLP de saída
 dlp = DLPGateway.from_policy_file("policies/dlp_rules.yaml", audit_logger=audit)
 dlp_result = dlp.scan("token=ghp_abcdefghijklmnopqrstuvwxyz0123456789")
-# → BLOCK (github-token)
 
-# 3. Sanitização de entrada
 sanitizer = ContentSanitizer(audit_logger=audit)
 clean = sanitizer.sanitize("Ignore previous instructions and...")
-# → conteúdo neutralizado
 
-# 4. Proxy de credenciais + Vault (opcional)
 proxy = CredentialProxy(audit_logger=audit)
 proxy.register("github_token", "ghp_xxx", allowed_domains=["api.github.com"])
-
-# Monitoramento de higiene dos segredos
 monitor = SecretsMonitor(proxy, audit_logger=audit)
 report = monitor.check()
-print(report.critical, report.notes)
 
-# 5. Sandbox
 sandbox = SandboxExecutor(level=IsolationLevel.PROCESS, audit_logger=audit)
 result = sandbox.run("echo hello", timeout=5)
 ```
 
-### Integração HashiCorp Vault
-
-```python
-from credential_proxy import CredentialProxy, VaultSecretLoader, SecretsMonitor
-
-proxy = CredentialProxy(audit_logger=audit)
-loader = VaultSecretLoader(proxy)  # usa VAULT_ADDR + VAULT_TOKEN
-
-loader.load_kv(
-    mount="secret",
-    path="agents/github",
-    key="token",
-    handle_name="github_token",
-    allowed_domains=["api.github.com", "github.com"],
-)
-
-# Monitor verifica token Vault + higiene dos handles
-monitor = SecretsMonitor(proxy, vault_loader=loader, audit_logger=audit)
-report = monitor.check()
-```
-
 ---
 
-## 📁 Estrutura do Repositório
+## Estrutura
 
-```
+```text
 Ventura.SEG/
-├── LICENSE                    # Apache 2.0
+├── LICENSE
 ├── SECURITY.md
 ├── THREAT_MODEL.md
+├── CHANGELOG.md
 ├── requirements.txt
 ├── docs/architecture.md
 ├── policies/
-│   ├── allowlist_commands.yaml
-│   ├── allowlist_domains.yaml
-│   └── dlp_rules.yaml         # v1.1 (inclui Vault)
 ├── src/
-│   ├── permissions/           # Motor YAML + hot-reload
-│   ├── audit/                 # Logger imutável
-│   ├── gateway_in/            # Sanitização anti-injection
-│   ├── gateway_out/           # DLP
-│   ├── credential_proxy/      # Proxy + Vault + Monitor
-│   ├── sandbox/               # Process + Docker
-│   └── core/                  # Loop regenerativo
-└── tests/
-    ├── test_permission_engine.py
-    ├── test_dlp.py
-    ├── test_gateway_in.py
-    ├── test_credential_proxy.py
-    └── test_secrets_monitor.py
+│   ├── permissions/
+│   ├── audit/                 # JSONL append-only durante escrita
+│   ├── gateway_in/
+│   ├── gateway_out/
+│   ├── credential_proxy/
+│   ├── sandbox/
+│   └── core/
+├── tests/
+└── .github/workflows/
 ```
 
----
+## Modelo de ameaça coberto
 
-## 🛡️ Modelo de Ameaça Coberto
+O projeto possui controles e testes voltados a:
 
-- Injeção de prompt indireta
-- Exfiltração de dados (DLP)
-- Escalonamento de privilégio
-- Abuso / vazamento de credenciais
-- Erros destrutivos do modelo
-- Segredos sem allowlist de domínio
-- Token Vault expirado / inválido
+- prompt injection direta/indireta e conteúdo não confiável;
+- exfiltração de dados por padrões DLP;
+- escalonamento de privilégio via política;
+- abuso ou vazamento de credenciais;
+- ações destrutivas conhecidas;
+- destinos de rede fora de allowlist;
+- higiene e estado de credenciais Vault.
 
----
+A cobertura não deve ser interpretada como proteção absoluta contra toda variação possível desses ataques.
 
-## 📝 Licença
+## Auditoria
 
-**Apache License 2.0** — licença open-source real e válida.
+O logger local utiliza escrita JSONL em modo append. Isso melhora rastreabilidade operacional, mas **não torna o arquivo imutável por si só**. Para evidência contra adulteração, use hash chaining/HMAC/assinaturas e armazenamento WORM ou equivalente.
 
-> Certificações organizacionais (SOC 2, ISO 27001, LGPD etc.) não são atribuídas a repositórios de código.
+## Qualidade e segurança
 
----
+- CI em Python suportado;
+- testes automatizados;
+- validação de políticas;
+- secret scan;
+- auditoria de dependências;
+- release workflow versionado.
 
-**Ventura Autor**  
-Segurança de agentes como infraestrutura, não como afterthought.
+Resultados de CI e segurança devem ser tratados como evidência somente quando os respectivos workflows tiverem executado com sucesso para o commit/release publicado.
+
+## Licença
+
+Apache License 2.0 — consulte [LICENSE](LICENSE).
+
+Certificações organizacionais como SOC 2 e ISO 27001 não são atribuídas a este repositório.
