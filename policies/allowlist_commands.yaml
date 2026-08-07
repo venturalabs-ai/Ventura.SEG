@@ -6,10 +6,15 @@ version: "1.0"
 default_action: block
 
 rules:
+  - id: ls-safe-options
+    pattern: '^ls(?:\s+-[A-Za-z]+)*$'
+    action: allow
+    description: "Listagem de diretório com flags simples, sem caminhos arbitrários"
+
   - id: read-safe
     pattern: '^(ls|cat|head|tail|pwd|whoami|date|echo|uname|df|du|free|ps|top|htop)$'
     action: allow
-    description: "Comandos básicos de leitura e informação do sistema"
+    description: "Comandos básicos de leitura e informação do sistema sem argumentos"
 
   - id: git-read
     pattern: '^git (status|log|diff|show|branch|remote|fetch)$'
