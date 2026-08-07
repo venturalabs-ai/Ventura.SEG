@@ -1,20 +1,31 @@
 """
-Ventura.SEG — Integração HashiCorp Vault
-=========================================
+Ventura.SEG — Integração HashiCorp Vault (+ OIDC)
+==================================================
 Carrega segredos do Vault e os registra no CredentialProxy
 sem jamais expor os valores ao contexto do agente.
+
+Métodos de autenticação suportados:
+  1. Token estático          — VAULT_TOKEN
+  2. OIDC / JWT              — login via auth method jwt/oidc do Vault
 
 Requisitos:
   pip install hvac
 
-Variáveis de ambiente esperadas:
-  VAULT_ADDR   — URL do Vault (ex: https://vault.exemplo.com:8200)
-  VAULT_TOKEN  — Token de autenticação (ou use AppRole)
+Variáveis de ambiente:
+  VAULT_ADDR              URL do Vault (ex: https://vault.exemplo.com:8200)
+  VAULT_TOKEN             Token estático (modo token)
+  VAULT_AUTH_METHOD       token | oidc | jwt  (default: token)
+  VAULT_OIDC_ROLE         Role configurada no auth method OIDC/JWT
+  VAULT_OIDC_PATH         Mount path do auth method (default: oidc ou jwt)
+  VAULT_OIDC_JWT          JWT emitido pelo Identity Provider
+  VAULT_OIDC_JWT_PATH     Caminho de arquivo com o JWT (ex: service account K8s)
 """
 
 from __future__ import annotations
 
 import os
+from enum import Enum
+from pathlib import Path
 from typing import Any, Optional
 
 try:
@@ -26,22 +37,28 @@ except ImportError:
 from .proxy import CredentialProxy, CredentialHandle
 
 
+class VaultAuthMethod(str, Enum):
+    TOKEN = "token"
+    OIDC = "oidc"
+    JWT = "jwt"
+
+
 class VaultSecretLoader:
     """
     Carrega segredos do HashiCorp Vault e registra no CredentialProxy.
 
-    Uso:
-        proxy = CredentialProxy(audit_logger=audit)
-        loader = VaultSecretLoader(proxy)
+    Exemplos
+    --------
+    # Token estático
+    loader = VaultSecretLoader(proxy)
 
-        # Carrega um segredo KV v2
-        loader.load_kv(
-            mount="secret",
-            path="agents/github",
-            key="token",
-            handle_name="github_token",
-            allowed_domains=["api.github.com", "github.com"],
-        )
+    # OIDC / JWT
+    loader = VaultSecretLoader.from_oidc(
+        proxy,
+        role="ventura-seg",
+        jwt=os.environ["VAULT_OIDC_JWT"],
+        auth_path="oidc",
+    )
     """
 
     def __init__(
@@ -50,6 +67,9 @@ class VaultSecretLoader:
         vault_addr: Optional[str] = None,
         vault_token: Optional[str] = None,
         audit_logger: Any = None,
+        *,
+        _client: Any = None,
+        auth_method: VaultAuthMethod = VaultAuthMethod.TOKEN,
     ) -> None:
         if not HVAC_AVAILABLE:
             raise ImportError(
@@ -59,23 +79,224 @@ class VaultSecretLoader:
         self.proxy = proxy
         self.audit = audit_logger
         self.vault_addr = vault_addr or os.getenv("VAULT_ADDR", "http://127.0.0.1:8200")
-        self.vault_token = vault_token or os.getenv("VAULT_TOKEN")
+        self.auth_method = auth_method
+        self._oidc_role: Optional[str] = None
+        self._oidc_path: Optional[str] = None
 
-        self.client = hvac.Client(url=self.vault_addr, token=self.vault_token)
+        if _client is not None:
+            self.client = _client
+        else:
+            token = vault_token or os.getenv("VAULT_TOKEN")
+            self.client = hvac.Client(url=self.vault_addr, token=token)
 
-        if not self.client.is_authenticated():
-            raise PermissionError(
-                f"Falha na autenticação com Vault em {self.vault_addr}. "
-                "Verifique VAULT_TOKEN ou AppRole."
-            )
+            if not self.client.is_authenticated():
+                raise PermissionError(
+                    f"Falha na autenticação com Vault em {self.vault_addr}. "
+                    "Use VAULT_TOKEN ou VaultSecretLoader.from_oidc(...)."
+                )
 
         if self.audit:
             self.audit.log_event(
                 component="credential_proxy",
                 action="vault_connect",
                 decision="success",
-                reason=f"Conectado ao Vault em {self.vault_addr}",
+                reason=f"Conectado ao Vault em {self.vault_addr} via {self.auth_method.value}",
+                metadata={"auth_method": self.auth_method.value},
             )
+
+    # ------------------------------------------------------------------
+    # Autenticação OIDC / JWT
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_oidc(
+        cls,
+        proxy: CredentialProxy,
+        role: Optional[str] = None,
+        jwt: Optional[str] = None,
+        jwt_path: Optional[str] = None,
+        auth_path: Optional[str] = None,
+        vault_addr: Optional[str] = None,
+        audit_logger: Any = None,
+        method: VaultAuthMethod = VaultAuthMethod.OIDC,
+    ) -> "VaultSecretLoader":
+        """
+        Autentica no Vault usando o auth method OIDC ou JWT.
+
+        Fluxo:
+          1. Obtém um JWT do Identity Provider (ou de arquivo/env)
+          2. Envia o JWT ao Vault (auth/oidc ou auth/jwt)
+          3. Vault valida o token com o IdP / chaves configuradas
+          4. Vault devolve um client token de curta duração
+          5. Esse token é usado para ler segredos (nunca exposto ao agente)
+
+        Parâmetros podem vir de argumentos ou de variáveis de ambiente:
+          VAULT_OIDC_ROLE, VAULT_OIDC_JWT, VAULT_OIDC_JWT_PATH, VAULT_OIDC_PATH
+        """
+        if not HVAC_AVAILABLE:
+            raise ImportError("Pacote 'hvac' não instalado. Execute: pip install hvac")
+
+        addr = vault_addr or os.getenv("VAULT_ADDR", "http://127.0.0.1:8200")
+        role = role or os.getenv("VAULT_OIDC_ROLE")
+        auth_path = auth_path or os.getenv("VAULT_OIDC_PATH") or method.value
+        jwt_token = jwt or os.getenv("VAULT_OIDC_JWT")
+
+        # JWT a partir de arquivo (comum em Kubernetes: projected service account)
+        if not jwt_token:
+            path = jwt_path or os.getenv("VAULT_OIDC_JWT_PATH")
+            if path and Path(path).is_file():
+                jwt_token = Path(path).read_text(encoding="utf-8").strip()
+
+        if not role:
+            raise ValueError(
+                "Role OIDC/JWT obrigatória. Informe role= ou VAULT_OIDC_ROLE."
+            )
+        if not jwt_token:
+            raise ValueError(
+                "JWT obrigatório. Informe jwt=, VAULT_OIDC_JWT ou VAULT_OIDC_JWT_PATH."
+            )
+
+        client = hvac.Client(url=addr)
+
+        try:
+            # hvac: auth.jwt.jwt_login funciona para mount jwt e oidc
+            # (ambos usam o mesmo backend type em versões recentes do Vault)
+            login_response = client.auth.jwt.jwt_login(
+                role=role,
+                jwt=jwt_token,
+                path=auth_path,
+            )
+            client_token = login_response["auth"]["client_token"]
+            client.token = client_token
+        except Exception as exc:
+            if audit_logger:
+                audit_logger.log_event(
+                    component="credential_proxy",
+                    action="vault_oidc_login",
+                    decision="failed",
+                    reason=str(exc),
+                    metadata={"role": role, "auth_path": auth_path},
+                )
+            raise PermissionError(
+                f"Falha no login OIDC/JWT no Vault (path={auth_path}, role={role}): {exc}"
+            ) from exc
+
+        if not client.is_authenticated():
+            raise PermissionError("Login OIDC/JWT concluído, mas cliente não autenticado.")
+
+        if audit_logger:
+            lease = login_response.get("auth", {}).get("lease_duration")
+            audit_logger.log_event(
+                component="credential_proxy",
+                action="vault_oidc_login",
+                decision="success",
+                reason=f"Login OIDC/JWT ok (role={role}, path={auth_path})",
+                metadata={
+                    "role": role,
+                    "auth_path": auth_path,
+                    "lease_duration": lease,
+                    "auth_method": method.value,
+                    # Nunca logar o JWT nem o client_token
+                },
+            )
+
+        loader = cls(
+            proxy=proxy,
+            vault_addr=addr,
+            audit_logger=audit_logger,
+            _client=client,
+            auth_method=method,
+        )
+        loader._oidc_role = role
+        loader._oidc_path = auth_path
+        return loader
+
+    @classmethod
+    def from_env(cls, proxy: CredentialProxy, audit_logger: Any = None) -> "VaultSecretLoader":
+        """
+        Escolhe automaticamente o método de auth com base em VAULT_AUTH_METHOD.
+
+          VAULT_AUTH_METHOD=token  → token estático
+          VAULT_AUTH_METHOD=oidc   → from_oidc (mount oidc)
+          VAULT_AUTH_METHOD=jwt    → from_oidc (mount jwt)
+        """
+        method_raw = (os.getenv("VAULT_AUTH_METHOD") or "token").lower().strip()
+        try:
+            method = VaultAuthMethod(method_raw)
+        except ValueError:
+            method = VaultAuthMethod.TOKEN
+
+        if method in (VaultAuthMethod.OIDC, VaultAuthMethod.JWT):
+            return cls.from_oidc(
+                proxy=proxy,
+                method=method,
+                auth_path=os.getenv("VAULT_OIDC_PATH") or method.value,
+                audit_logger=audit_logger,
+            )
+
+        return cls(proxy=proxy, audit_logger=audit_logger, auth_method=VaultAuthMethod.TOKEN)
+
+    def reauthenticate_oidc(
+        self,
+        jwt: Optional[str] = None,
+        jwt_path: Optional[str] = None,
+    ) -> bool:
+        """
+        Renova a sessão Vault com um novo JWT (token rotation / lease expirado).
+
+        Mantém o mesmo role e auth_path usados no login original.
+        """
+        if self.auth_method not in (VaultAuthMethod.OIDC, VaultAuthMethod.JWT):
+            return False
+        if not self._oidc_role:
+            return False
+
+        jwt_token = jwt or os.getenv("VAULT_OIDC_JWT")
+        if not jwt_token:
+            path = jwt_path or os.getenv("VAULT_OIDC_JWT_PATH")
+            if path and Path(path).is_file():
+                jwt_token = Path(path).read_text(encoding="utf-8").strip()
+
+        if not jwt_token:
+            if self.audit:
+                self.audit.log_event(
+                    component="credential_proxy",
+                    action="vault_oidc_renew",
+                    decision="failed",
+                    reason="JWT ausente para reautenticação",
+                )
+            return False
+
+        try:
+            login_response = self.client.auth.jwt.jwt_login(
+                role=self._oidc_role,
+                jwt=jwt_token,
+                path=self._oidc_path or self.auth_method.value,
+            )
+            self.client.token = login_response["auth"]["client_token"]
+
+            if self.audit:
+                self.audit.log_event(
+                    component="credential_proxy",
+                    action="vault_oidc_renew",
+                    decision="success",
+                    reason="Sessão Vault renovada via OIDC/JWT",
+                    metadata={"role": self._oidc_role},
+                )
+            return self.client.is_authenticated()
+        except Exception as exc:
+            if self.audit:
+                self.audit.log_event(
+                    component="credential_proxy",
+                    action="vault_oidc_renew",
+                    decision="failed",
+                    reason=str(exc),
+                )
+            return False
+
+    # ------------------------------------------------------------------
+    # Leitura de segredos (inalterada em comportamento)
+    # ------------------------------------------------------------------
 
     def load_kv(
         self,
@@ -129,6 +350,7 @@ class VaultSecretLoader:
                         "key": key,
                         "handle": handle_name,
                         "allowed_domains": allowed_domains or [],
+                        "auth_method": self.auth_method.value,
                     },
                 )
 
@@ -145,22 +367,8 @@ class VaultSecretLoader:
                 )
             raise
 
-    def load_multiple(
-        self,
-        secrets: list[dict],
-    ) -> list[CredentialHandle]:
-        """
-        Carrega múltiplos segredos de uma vez.
-
-        Cada item do formato:
-          {
-            "mount": "secret",
-            "path": "agents/github",
-            "key": "token",
-            "handle_name": "github_token",
-            "allowed_domains": ["api.github.com"]
-          }
-        """
+    def load_multiple(self, secrets: list[dict]) -> list[CredentialHandle]:
+        """Carrega múltiplos segredos de uma vez."""
         handles = []
         for item in secrets:
             handle = self.load_kv(
