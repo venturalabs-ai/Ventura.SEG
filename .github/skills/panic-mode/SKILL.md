@@ -1,6 +1,6 @@
 ---
 name: panic-mode
-description: Contain a suspected compromised agent by reducing privileges and isolating execution through existing Ventura.SEG controls. Use when active behavior may cause data loss credential abuse or destructive actions. Do not use for ordinary debugging or low-risk configuration changes.
+description: Contain a suspected compromised agent by reducing privileges and isolating execution through existing Ventura.SEG controls. Use when active behavior may cause data loss credential abuse or destructive actions. Do not use when handling ordinary debugging or low-risk configuration changes.
 ---
 
 # Panic mode
