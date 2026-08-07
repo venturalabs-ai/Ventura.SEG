@@ -5,7 +5,8 @@ Fica fora do perímetro do agente. Injeta tokens/segredos nas requisições
 sem que o agente jamais os veja. Aplica allowlist de domínios.
 
 Suporta:
-- Carregamento via HashiCorp Vault (token estático, OIDC, JWT)
+- HashiCorp Vault (token, OIDC, JWT)
+- Renovação automática de sessão
 - Monitoramento de higiene de segredos
 
 Princípio: Segredo nunca exposto ao modelo.
@@ -13,6 +14,7 @@ Princípio: Segredo nunca exposto ao modelo.
 
 from .proxy import CredentialProxy, CredentialHandle, InjectionResult
 from .monitor import SecretsMonitor, MonitorReport, SecretHealth
+from .auto_renew import VaultAutoRenewer, RenewStatus, start_auto_renew
 
 try:
     from .vault import VaultSecretLoader, VaultAuthMethod
@@ -26,6 +28,9 @@ __all__ = [
     "InjectionResult",
     "VaultSecretLoader",
     "VaultAuthMethod",
+    "VaultAutoRenewer",
+    "RenewStatus",
+    "start_auto_renew",
     "SecretsMonitor",
     "MonitorReport",
     "SecretHealth",
