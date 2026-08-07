@@ -1,9 +1,13 @@
 """
 Ventura.SEG — Sistema de Auditoria e Logs
 =========================================
-Logging estruturado, imutável e correlacionável por sessão.
+Logging estruturado, append-only durante a escrita e correlacionável por sessão.
 Todas as decisões de segurança são registradas com timestamp, identidade,
 ação solicitada, decisão e justificativa.
+
+Observação: arquivo JSONL em modo append não é, por si só, armazenamento
+criptograficamente imutável. Garantias de tamper evidence/immutability exigem
+hash chain, assinatura/checkpoint e/ou armazenamento WORM/append-only externo.
 """
 
 from __future__ import annotations
@@ -22,16 +26,17 @@ class AuditLevel(str, Enum):
     INFO = "INFO"
     WARNING = "WARNING"
     CRITICAL = "CRITICAL"
-    SECURITY = "SECURITY"  # Decisões de permissão / bloqueios
+    SECURITY = "SECURITY"
 
 
 class AuditLogger:
     """
-    Logger de auditoria imutável.
+    Logger de auditoria append-only durante a operação normal.
 
     - Escreve em arquivo JSON Lines (um evento por linha)
     - Também emite para stdout em formato legível
     - Cada evento recebe um event_id único e session_id
+    - Não afirma imutabilidade criptográfica do arquivo local
     """
 
     def __init__(
@@ -45,11 +50,9 @@ class AuditLogger:
         self.session_id = session_id or str(uuid4())
         self.also_console = also_console
 
-        # Arquivo diário (rotação simples por data)
         date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         self.log_file = self.log_dir / f"audit-{date_str}.jsonl"
 
-        # Logger padrão Python para console legível
         self._py_logger = logging.getLogger("ventura.seg.audit")
         self._py_logger.setLevel(logging.INFO)
         if not self._py_logger.handlers and also_console:
@@ -60,16 +63,14 @@ class AuditLogger:
             self._py_logger.addHandler(handler)
 
     def _write(self, event: dict[str, Any]) -> None:
-        """Escreve o evento de forma append-only (imutável)."""
+        """Acrescenta o evento ao arquivo JSONL em modo append."""
         event["event_id"] = str(uuid4())
         event["session_id"] = self.session_id
         event["timestamp"] = datetime.now(timezone.utc).isoformat()
 
-        # Persistência imutável
         with open(self.log_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
-        # Console legível
         if self.also_console:
             level = event.get("level", "INFO")
             msg = (
