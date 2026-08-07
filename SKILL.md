@@ -1,6 +1,6 @@
 # SKILL — Ventura.SEG
 
-> LOOP Skill Engine / Deterministic Replay
+> LOOP Skill Engine / Constrained Replay
 
 ## Identidade
 
@@ -15,11 +15,11 @@
 
 - Motor de permissões YAML (allow / block / ask)
 - DLP de saída
-- Gateway de entrada (anti prompt-injection)
+- Gateway de entrada para detecção e mitigação de prompt injection
 - Proxy de credenciais + HashiCorp Vault (OIDC/JWT + auto-renew)
 - Sandbox (process / Docker)
 - Consul Service Mesh (intentions + upstreams)
-- Auditoria imutável JSONL
+- Auditoria JSONL append-only durante a escrita; integridade criptográfica/WORM requer camada adicional
 
 ## Entradas
 
@@ -32,5 +32,6 @@
 ## Restrições
 
 - Nunca expor segredos ao modelo/agente
-- Políticas 100% versionadas (sem hardcode de regras críticas)
+- Políticas versionadas; regras críticas devem permanecer fora de prompts livres
 - Zero trust entre agentes
+- Não tratar saída de LLM como determinística sem controle explícito do runtime
