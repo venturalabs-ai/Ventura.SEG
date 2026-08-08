@@ -1,3 +1,3 @@
-pyyaml>=6.0.1
+pyyaml>=6.0.3
 pytest>=8.0.0
 hvac>=2.1.0  # HashiCorp Vault client (opcional, só necessário se usar Vault)
